@@ -61,7 +61,9 @@ export async function sendTelegramDocument(
     const body = new FormData();
     body.append("chat_id", chatId);
     if (caption) body.append("caption", caption);
-    body.append("document", new Blob([bytes], { type: "application/pdf" }), filename);
+    const pdfBytes = new Uint8Array(bytes.byteLength);
+    pdfBytes.set(bytes);
+    body.append("document", new Blob([pdfBytes], { type: "application/pdf" }), filename);
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
       method: "POST",
