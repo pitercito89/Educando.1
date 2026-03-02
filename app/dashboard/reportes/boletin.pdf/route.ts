@@ -67,7 +67,8 @@ export async function GET(request: Request) {
   });
 
   const filename = `boletin_${student.full_name.replaceAll(" ", "_")}_${term.replaceAll(" ", "_")}.pdf`;
-  return new Response(bytes, {
+  const pdfBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return new Response(pdfBuffer, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
