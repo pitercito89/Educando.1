@@ -12,7 +12,7 @@ export default async function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(900px_400px_at_10%_-5%,#bde3ff_0%,transparent_60%),radial-gradient(700px_380px_at_95%_-10%,#ffe7ae_0%,transparent_60%),linear-gradient(160deg,#f4f9ff_0%,#eef5ff_42%,#f8fbff_100%)] px-4 py-8">
-      <main className="mx-auto w-full max-w-md rounded-3xl border border-white/80 bg-white/90 p-8 shadow-[0_24px_60px_-35px_rgba(18,55,116,0.65)] backdrop-blur">
+      <main className="mx-auto w-full max-w-md rounded-3xl border border-white/80 bg-white/95 p-8 shadow-[0_24px_60px_-35px_rgba(18,55,116,0.65)] backdrop-blur transition-transform duration-300 hover:-translate-y-0.5">
         <div className="mb-6 text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-700">
             Plataforma Educando

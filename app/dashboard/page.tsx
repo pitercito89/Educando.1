@@ -51,24 +51,6 @@ const adminModules = [
   },
 ];
 
-const docenteModules = [
-  {
-    title: "Calificaciones",
-    href: "/dashboard/calificaciones",
-    description: "Registrar notas solo en materias asignadas.",
-  },
-  {
-    title: "Asistencias",
-    href: "/dashboard/asistencias",
-    description: "Lista diaria de estudiantes de tus cursos.",
-  },
-  {
-    title: "Notificaciones",
-    href: "/dashboard/notificaciones",
-    description: "Avisos de aula para padres y estudiantes vinculados.",
-  },
-];
-
 const directorModules = [
   {
     title: "Reportes",
@@ -486,8 +468,6 @@ export default async function DashboardPage() {
   const modules =
     session.role === "admin"
       ? adminModules
-      : session.role === "docente"
-      ? docenteModules
       : directorModules;
 
   return (

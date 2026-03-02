@@ -27,7 +27,7 @@ export async function loginAction(
   const user = await validateCredentials(username, password);
 
   if (!user) {
-    return { error: "Credenciales invalidas." };
+    return { error: "Usuario o contrasena incorrectos." };
   }
 
   await createSession(user);
