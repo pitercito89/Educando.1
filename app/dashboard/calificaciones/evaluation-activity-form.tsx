@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import type { Subject } from "@/lib/db";
+import { useActionState, useMemo, useState } from "react";
+import type { Student, Subject, SubjectStudentEnrollment } from "@/lib/db";
 import {
   createEvaluationActivityAction,
   type CatalogFormState,
@@ -11,36 +11,102 @@ const initialState: CatalogFormState = { error: null, success: null };
 
 type Props = {
   subjects: Subject[];
+  students: Student[];
+  enrollments: SubjectStudentEnrollment[];
+  initialCourse?: string;
+  initialSubjectId?: string;
 };
 
-export function EvaluationActivityForm({ subjects }: Props) {
+export function EvaluationActivityForm({
+  subjects,
+  students,
+  enrollments,
+  initialCourse = "",
+  initialSubjectId = "",
+}: Props) {
   const [state, formAction, isPending] = useActionState(
     createEvaluationActivityAction,
     initialState
   );
+  const [course, setCourse] = useState<string>(initialCourse);
+  const [subjectId, setSubjectId] = useState<string>(initialSubjectId);
+  const lockedContext = Boolean(initialCourse && initialSubjectId);
+
+  const studentsById = useMemo(
+    () => new Map(students.map((item) => [item.id, item])),
+    [students]
+  );
+
+  const courses = useMemo(
+    () => Array.from(new Set(students.map((item) => item.course))).sort(),
+    [students]
+  );
+
+  const filteredSubjects = useMemo(() => {
+    if (!course) return [];
+    const allowedSubjectIds = new Set(
+      enrollments
+        .filter((item) => studentsById.get(item.student_id)?.course === course)
+        .map((item) => item.subject_id)
+    );
+    return subjects.filter((item) => allowedSubjectIds.has(item.id));
+  }, [course, enrollments, studentsById, subjects]);
+
+  const selectedSubject = useMemo(
+    () => filteredSubjects.find((item) => String(item.id) === subjectId) ?? null,
+    [filteredSubjects, subjectId]
+  );
 
   return (
     <form action={formAction} className="grid grid-cols-1 md:grid-cols-4 gap-3">
-      <select
-        name="subject_id"
-        className="border border-gray-300 rounded-lg px-3 py-2"
-        defaultValue=""
-      >
-        <option value="" disabled>
-          Materia
-        </option>
-        {subjects.map((subject) => (
-          <option key={subject.id} value={subject.id}>
-            {subject.name} ({subject.level})
-          </option>
-        ))}
-      </select>
+      {lockedContext ? (
+        <>
+          <input type="hidden" name="course" value={course} />
+          <input type="hidden" name="subject_id" value={subjectId} />
+          <div className="md:col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            Curso: <span className="font-semibold">{course}</span>
+          </div>
+          <div className="md:col-span-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            Materia: <span className="font-semibold">{selectedSubject?.name ?? "Seleccionada"}</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <select
+            name="course"
+            className="border border-gray-300 rounded-lg px-3 py-2"
+            value={course}
+            onChange={(event) => {
+              setCourse(event.target.value);
+              setSubjectId("");
+            }}
+          >
+            <option value="">Curso</option>
+            {courses.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
 
-      <input
-        name="course"
-        placeholder="Curso (ej: 6to A)"
-        className="border border-gray-300 rounded-lg px-3 py-2"
-      />
+          <select
+            name="subject_id"
+            className="border border-gray-300 rounded-lg px-3 py-2"
+            value={subjectId}
+            onChange={(event) => setSubjectId(event.target.value)}
+            disabled={!course}
+          >
+            <option value="" disabled>
+              {!course ? "Primero selecciona curso" : "Materia"}
+            </option>
+            {filteredSubjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name} ({subject.level})
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       <input
         name="term"
         placeholder="Periodo (ej: 1T-2026)"

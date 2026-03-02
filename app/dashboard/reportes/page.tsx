@@ -8,7 +8,18 @@ import {
   listStudents,
 } from "@/lib/db";
 
-export default async function ReportesPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function pickParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return (value[0] ?? "").trim();
+  return (value ?? "").trim();
+}
+
+export default async function ReportesPage({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+  const selectedCourse = pickParam(params.course);
   const session = await getSession();
   if (!session) redirect("/login");
   if (!["admin", "director"].includes(session.role)) redirect("/dashboard");
@@ -26,6 +37,7 @@ export default async function ReportesPage() {
   const attendance = attendanceResult.data ?? [];
   const notifications = notificationsResult.data ?? [];
   const students = studentsResult.data ?? [];
+  const courseOptions = Array.from(new Set(students.map((student) => student.course))).sort();
 
   const courses = new Map<string, { students: Set<string>; grades: number }>();
   for (const row of grades) {
@@ -68,25 +80,69 @@ export default async function ReportesPage() {
               <p className="mt-1">Ejecuta `database/schema.sql` para habilitar reportes.</p>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-3">
-              <a
-                href="/dashboard/reportes/grades.csv"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-              >
-                Descargar calificaciones (CSV)
-              </a>
-              <a
-                href="/dashboard/reportes/asistencias.csv"
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-              >
-                Descargar asistencias (CSV)
-              </a>
-              <Link
-                href="/dashboard/reportes/boletin"
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-              >
-                Generar boletin trimestral
-              </Link>
+            <div className="space-y-3">
+              <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-blue-50 p-4 md:grid-cols-4">
+                <select
+                  name="course"
+                  defaultValue={selectedCourse}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Selecciona curso</option>
+                  {courseOptions.map((course) => (
+                    <option key={course} value={course}>
+                      {course}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Aplicar curso
+                </button>
+                <Link
+                  href="/dashboard/reportes"
+                  className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                >
+                  Limpiar
+                </Link>
+              </form>
+
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={selectedCourse ? `/dashboard/reportes/grades.csv?course=${encodeURIComponent(selectedCourse)}` : "#"}
+                  className={`px-4 py-2 rounded-lg text-white ${
+                    selectedCourse
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "cursor-not-allowed bg-blue-300"
+                  }`}
+                  aria-disabled={!selectedCourse}
+                >
+                  Descargar calificaciones (CSV)
+                </a>
+                <a
+                  href={selectedCourse ? `/dashboard/reportes/asistencias.csv?course=${encodeURIComponent(selectedCourse)}` : "#"}
+                  className={`px-4 py-2 rounded-lg text-white ${
+                    selectedCourse
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "cursor-not-allowed bg-green-300"
+                  }`}
+                  aria-disabled={!selectedCourse}
+                >
+                  Descargar asistencias (CSV)
+                </a>
+                <Link
+                  href={selectedCourse ? `/dashboard/reportes/boletin?course=${encodeURIComponent(selectedCourse)}` : "/dashboard/reportes/boletin"}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  Generar boletin trimestral
+                </Link>
+              </div>
+              {!selectedCourse ? (
+                <p className="text-sm text-amber-800">
+                  Primero selecciona un curso para exportar calificaciones o asistencias.
+                </p>
+              ) : null}
             </div>
           )}
         </section>
@@ -143,7 +199,7 @@ export default async function ReportesPage() {
           href="/dashboard"
           className="mt-6 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
         >
-          Volver al dashboard
+          Volver
         </Link>
       </main>
     </div>

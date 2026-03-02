@@ -161,7 +161,7 @@ export default async function NotificacionesPage() {
           href="/dashboard"
           className="mt-6 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
         >
-          Volver al dashboard
+          Volver
         </Link>
       </main>
     </div>

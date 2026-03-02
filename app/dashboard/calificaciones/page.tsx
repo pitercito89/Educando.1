@@ -37,6 +37,7 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
   const selectedCourse = pickParam(params.course);
   const selectedTeacher = pickParam(params.teacher);
   const selectedSubject = pickParam(params.subject);
+  const selectedView = pickParam(params.view) === "historial" ? "historial" : "operativa";
 
   const session = await getSession();
   if (!session) redirect("/login");
@@ -85,8 +86,142 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
   const parents = parentsResult.data ?? [];
   const users = usersResult.data ?? [];
   const teacherAssignments = teacherAssignmentsResult.data ?? [];
-  const enrollments = enrollmentResult.data ?? [];
+  let enrollments = enrollmentResult.data ?? [];
   const teachers = users.filter((user) => user.role === "docente");
+
+  if (session.role === "admin") {
+    const adminFilteredGrades = grades.filter((grade) => {
+      const byCourse = selectedCourse ? grade.student.course === selectedCourse : true;
+      const bySubject = selectedSubject ? String(grade.subject.id) === selectedSubject : true;
+      return byCourse && bySubject;
+    });
+
+    const adminCourseOptions = Array.from(
+      new Set(grades.map((grade) => grade.student.course))
+    ).sort();
+    const adminSubjectOptions = Array.from(
+      new Map(grades.map((grade) => [grade.subject.id, grade.subject])).values()
+    ).sort((a, b) => a.name.localeCompare(b.name));
+
+    const adminGrouped = new Map<string, typeof adminFilteredGrades>();
+    for (const grade of adminFilteredGrades) {
+      const group = adminGrouped.get(grade.student.course) ?? [];
+      group.push(grade);
+      adminGrouped.set(grade.student.course, group);
+    }
+
+    return (
+      <div className="min-h-screen bg-[linear-gradient(165deg,#eef6ff_0%,#f7fbff_40%,#f3f8ff_100%)] p-4 md:p-8">
+        <main className="mx-auto max-w-5xl rounded-3xl border border-white/80 bg-white/95 p-6 shadow-[0_24px_60px_-36px_rgba(23,66,130,0.65)] md:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
+            Panel Admin
+          </p>
+          <h1 className="mt-2 text-3xl font-extrabold text-slate-900">Resultados de Calificaciones</h1>
+          <p className="mt-2 text-gray-700">
+            Vista de solo lectura por curso para control academico del administrador.
+          </p>
+
+          <section className="mt-6">
+            <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-blue-50 p-4 md:grid-cols-3">
+              <select
+                name="course"
+                defaultValue={selectedCourse}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Todos los cursos</option>
+                {adminCourseOptions.map((course) => (
+                  <option key={course} value={course}>
+                    {course}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                name="subject"
+                defaultValue={selectedSubject}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Todas las materias</option>
+                {adminSubjectOptions.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name} ({subject.level})
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  Aplicar
+                </button>
+                <Link
+                  href="/dashboard/calificaciones"
+                  className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                >
+                  Limpiar
+                </Link>
+              </div>
+            </form>
+          </section>
+
+          <section className="mt-6">
+            {setupError ? (
+              <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+                {setupError}
+              </div>
+            ) : adminGrouped.size === 0 ? (
+              <p className="text-sm text-gray-600">No hay calificaciones para los filtros seleccionados.</p>
+            ) : (
+              <div className="space-y-4">
+                {Array.from(adminGrouped.entries()).map(([course, items]) => (
+                  <article key={course} className="overflow-x-auto rounded-2xl border border-gray-200">
+                    <div className="border-b border-gray-200 bg-blue-50 px-4 py-3">
+                      <p className="text-sm font-semibold text-blue-800">
+                        Curso: {course} ({items.length} calificaciones)
+                      </p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-white text-left">
+                        <tr>
+                          <th className="px-3 py-2">Estudiante</th>
+                          <th className="px-3 py-2">Materia</th>
+                          <th className="px-3 py-2">Periodo</th>
+                          <th className="px-3 py-2">Total</th>
+                          <th className="px-3 py-2">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((grade) => (
+                          <tr key={grade.id} className="border-t border-gray-100">
+                            <td className="px-3 py-2">{grade.student.full_name}</td>
+                            <td className="px-3 py-2">{grade.subject.name}</td>
+                            <td className="px-3 py-2">{grade.term}</td>
+                            <td className="px-3 py-2 font-semibold">{grade.total.toFixed(2)}</td>
+                            <td className="px-3 py-2">
+                              {new Date(grade.created_at).toLocaleString("es-BO")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <Link
+            href="/dashboard"
+            className="mt-6 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+          >
+            Volver
+          </Link>
+        </main>
+      </div>
+    );
+  }
 
   if (session.role === "docente") {
     if (!session.schoolUserId) {
@@ -108,6 +243,9 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
         students = studentsBySubjects.data ?? [];
         grades = grades.filter((item) => allowedSubjectIds.includes(item.subject_id));
         activities = activities.filter((item) => allowedSubjectIds.includes(item.subject_id));
+        enrollments = enrollments.filter((item) =>
+          allowedSubjectIds.includes(item.subject_id)
+        );
         const allowedActivityIds = new Set(activities.map((item) => item.id));
         scores = scores.filter((item) => allowedActivityIds.has(item.activity_id));
       }
@@ -178,35 +316,72 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
           Calificaciones enlazadas por llaves foraneas a estudiantes y materias.
         </p>
 
-        {canAdminCatalog ? (
-          <>
-            <section className="mt-5">
-              <h2 className="font-semibold text-gray-800 mb-2">1) Registrar estudiantes</h2>
+        <section className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <h2 className="font-semibold text-blue-900">Flujo recomendado</h2>
+          <p className="mt-1 text-sm text-blue-900/90">
+            1) Selecciona curso y materia para trabajar. 2) Crea la actividad evaluativa (examen,
+            practico, tarea). 3) Carga notas por actividad (individual o planilla). 4) Consolida el
+            trimestre y revisa el resultado por curso.
+          </p>
+        </section>
+
+        <section className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/calificaciones?view=operativa"
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              selectedView === "operativa"
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "border border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+            }`}
+          >
+            Vista operativa
+          </Link>
+          <Link
+            href="/dashboard/calificaciones?view=historial"
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              selectedView === "historial"
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "border border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+            }`}
+          >
+            Vista historial y reportes
+          </Link>
+        </section>
+
+        {selectedView === "operativa" && canAdminCatalog ? (
+          <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-4" open>
+            <summary className="cursor-pointer text-base font-semibold text-gray-900">
+              Configuracion academica (solo admin)
+            </summary>
+            <section className="mt-4">
+              <h2 className="font-semibold text-gray-800 mb-2">Registrar estudiantes</h2>
               <StudentForm />
             </section>
 
             <section className="mt-6">
-              <h2 className="font-semibold text-gray-800 mb-2">2) Registrar materias</h2>
+              <h2 className="font-semibold text-gray-800 mb-2">Registrar materias</h2>
               <SubjectForm />
             </section>
 
             <section className="mt-6">
-              <h2 className="font-semibold text-gray-800 mb-2">3) Asignar docente a materia</h2>
+              <h2 className="font-semibold text-gray-800 mb-2">Asignar docente a materia</h2>
               <TeacherSubjectForm teachers={teachers} subjects={allSubjectsResult.data ?? []} />
             </section>
 
             <section className="mt-6">
-              <h2 className="font-semibold text-gray-800 mb-2">4) Asignar estudiantes a materia</h2>
+              <h2 className="font-semibold text-gray-800 mb-2">Asignar estudiantes a materia</h2>
               <StudentSubjectForm
                 students={allStudentsResult.data ?? []}
                 subjects={allSubjectsResult.data ?? []}
               />
             </section>
-          </>
+          </details>
         ) : null}
 
+        {selectedView === "operativa" ? (
+          <>
         <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">5) Crear actividad evaluativa</h2>
+          <h2 className="font-semibold text-gray-800 mb-2">Paso 1: Crear actividad evaluativa</h2>
           {!canGrade ? (
             <p className="text-sm text-gray-600">Solo lectura para el rol director.</p>
           ) : students.length === 0 || subjects.length === 0 ? (
@@ -214,7 +389,13 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
               No hay estudiantes/materias habilitados para tu perfil.
             </div>
           ) : (
-            <EvaluationActivityForm subjects={subjects} />
+            <EvaluationActivityForm
+              subjects={subjects}
+              students={students}
+              enrollments={enrollments}
+              initialCourse={selectedCourse}
+              initialSubjectId={selectedSubject}
+            />
           )}
           <p className="text-xs text-gray-500 mt-2">
             Ejemplo: Examen, practico o proyecto por dimension y con peso.
@@ -222,7 +403,7 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
         </section>
 
         <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">6) Registrar nota por instrumento</h2>
+          <h2 className="font-semibold text-gray-800 mb-2">Paso 2: Registrar nota por instrumento</h2>
           {!canGrade ? (
             <p className="text-sm text-gray-600">Solo lectura para el rol director.</p>
           ) : activities.length === 0 ? (
@@ -234,12 +415,14 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
               activities={activities}
               students={students}
               enrollments={enrollments}
+              initialCourse={selectedCourse}
+              initialSubjectId={selectedSubject}
             />
           )}
         </section>
 
         <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">6.1) Carga masiva por planilla (tipo libreta)</h2>
+          <h2 className="font-semibold text-gray-800 mb-2">Paso 2.1: Carga masiva por planilla</h2>
           {!canGrade ? (
             <p className="text-sm text-gray-600">Solo lectura para el rol director.</p>
           ) : activities.length === 0 ? (
@@ -251,12 +434,14 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
               activities={activities}
               students={students}
               enrollments={enrollments}
+              initialCourse={selectedCourse}
+              initialSubjectId={selectedSubject}
             />
           )}
         </section>
 
         <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">7) Consolidar trimestre</h2>
+          <h2 className="font-semibold text-gray-800 mb-2">Paso 3: Consolidar trimestre</h2>
           {!canGrade ? (
             <p className="text-sm text-gray-600">Solo lectura para el rol director.</p>
           ) : (
@@ -265,6 +450,8 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
               subjects={subjects}
               activities={activities}
               enrollments={enrollments}
+              initialCourse={selectedCourse}
+              initialSubjectId={selectedSubject}
             />
           )}
           <p className="text-xs text-gray-500 mt-2">
@@ -279,150 +466,15 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
             </p>
           </div>
         </section>
+          </>
+        ) : null}
 
-        <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">Ultimas notas por instrumento</h2>
-          {setupError ? (
-            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
-              {setupError}
-            </div>
-          ) : scores.length === 0 ? (
-            <p className="text-sm text-gray-600">Aun no hay notas por instrumentos registradas.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-blue-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Fecha</th>
-                    <th className="px-3 py-2">Estudiante</th>
-                    <th className="px-3 py-2">Curso</th>
-                    <th className="px-3 py-2">Materia</th>
-                    <th className="px-3 py-2">Instrumento</th>
-                    <th className="px-3 py-2">Dimension</th>
-                    <th className="px-3 py-2">Peso</th>
-                    <th className="px-3 py-2">Nota</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scores.map((row) => (
-                    <tr key={row.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{new Date(row.created_at).toLocaleString("es-BO")}</td>
-                      <td className="px-3 py-2">{row.student?.full_name ?? "-"}</td>
-                      <td className="px-3 py-2">{row.activity?.course ?? row.student?.course ?? "-"}</td>
-                      <td className="px-3 py-2">{row.activity?.subject?.name ?? "-"}</td>
-                      <td className="px-3 py-2 capitalize">{row.activity?.instrument_type ?? "-"}</td>
-                      <td className="px-3 py-2 capitalize">{row.activity?.dimension ?? "-"}</td>
-                      <td className="px-3 py-2">{row.activity?.weight ?? "-"}</td>
-                      <td className="px-3 py-2 font-semibold">{row.score.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">Asignaciones docente-materia</h2>
-          {setupError ? (
-            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
-              {setupError}
-            </div>
-          ) : teacherAssignments.length === 0 ? (
-            <p className="text-sm text-gray-600">Sin asignaciones aun.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-blue-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Docente</th>
-                    <th className="px-3 py-2">Materia</th>
-                    <th className="px-3 py-2">Nivel</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teacherAssignments.map((item) => (
-                    <tr key={item.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{item.teacher?.full_name ?? "-"}</td>
-                      <td className="px-3 py-2">{item.subject?.name ?? "-"}</td>
-                      <td className="px-3 py-2">{item.subject?.level ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">Asignaciones estudiante-materia</h2>
-          {setupError ? (
-            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
-              {setupError}
-            </div>
-          ) : enrollments.length === 0 ? (
-            <p className="text-sm text-gray-600">Sin asignaciones aun.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-blue-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Estudiante</th>
-                    <th className="px-3 py-2">Curso</th>
-                    <th className="px-3 py-2">Materia</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enrollments.map((item) => (
-                    <tr key={item.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{item.student?.full_name ?? "-"}</td>
-                      <td className="px-3 py-2">{item.student?.course ?? "-"}</td>
-                      <td className="px-3 py-2">{item.subject?.name ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">Cuentas de padres/madres</h2>
-          {setupError ? (
-            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
-              {setupError}
-            </div>
-          ) : parents.length === 0 ? (
-            <p className="text-sm text-gray-600">Aun no hay cuentas de padre/madre registradas.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-blue-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Padre/Madre</th>
-                    <th className="px-3 py-2">Usuario</th>
-                    <th className="px-3 py-2">Estudiante</th>
-                    <th className="px-3 py-2">Curso</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parents.map((parent) => (
-                    <tr key={parent.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{parent.full_name}</td>
-                      <td className="px-3 py-2">{parent.username}</td>
-                      <td className="px-3 py-2">{parent.student?.full_name ?? "-"}</td>
-                      <td className="px-3 py-2">{parent.student?.course ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
+        {selectedView === "historial" ? (
+          <>
         <section className="mt-6">
           <h2 className="font-semibold text-gray-800 mb-2">Filtros de visualizacion</h2>
           <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-blue-50 p-4 md:grid-cols-4">
+            <input type="hidden" name="view" value="historial" />
             <select
               name="course"
               defaultValue={selectedCourse}
@@ -474,7 +526,7 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
                 Aplicar
               </button>
               <Link
-                href="/dashboard/calificaciones"
+                href="/dashboard/calificaciones?view=historial"
                 className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
               >
                 Limpiar
@@ -482,6 +534,161 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
             </div>
           </form>
         </section>
+
+        <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-4">
+          <summary className="cursor-pointer font-semibold text-gray-800">
+            Ver ultimas notas por instrumento
+          </summary>
+          <section className="mt-3">
+          <h2 className="font-semibold text-gray-800 mb-2">Ultimas notas por instrumento</h2>
+          {setupError ? (
+            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+              {setupError}
+            </div>
+          ) : scores.length === 0 ? (
+            <p className="text-sm text-gray-600">Aun no hay notas por instrumentos registradas.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-blue-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Fecha</th>
+                    <th className="px-3 py-2">Estudiante</th>
+                    <th className="px-3 py-2">Curso</th>
+                    <th className="px-3 py-2">Materia</th>
+                    <th className="px-3 py-2">Instrumento</th>
+                    <th className="px-3 py-2">Dimension</th>
+                    <th className="px-3 py-2">Peso</th>
+                    <th className="px-3 py-2">Nota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scores.map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{new Date(row.created_at).toLocaleString("es-BO")}</td>
+                      <td className="px-3 py-2">{row.student?.full_name ?? "-"}</td>
+                      <td className="px-3 py-2">{row.activity?.course ?? row.student?.course ?? "-"}</td>
+                      <td className="px-3 py-2">{row.activity?.subject?.name ?? "-"}</td>
+                      <td className="px-3 py-2 capitalize">{row.activity?.instrument_type ?? "-"}</td>
+                      <td className="px-3 py-2 capitalize">{row.activity?.dimension ?? "-"}</td>
+                      <td className="px-3 py-2">{row.activity?.weight ?? "-"}</td>
+                      <td className="px-3 py-2 font-semibold">{row.score.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </section>
+        </details>
+
+        <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-4">
+          <summary className="cursor-pointer font-semibold text-gray-800">
+            Ver asignaciones academicas
+          </summary>
+          <section className="mt-3">
+          <h2 className="font-semibold text-gray-800 mb-2">Asignaciones docente-materia</h2>
+          {setupError ? (
+            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+              {setupError}
+            </div>
+          ) : teacherAssignments.length === 0 ? (
+            <p className="text-sm text-gray-600">Sin asignaciones aun.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-blue-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Docente</th>
+                    <th className="px-3 py-2">Materia</th>
+                    <th className="px-3 py-2">Nivel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teacherAssignments.map((item) => (
+                    <tr key={item.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{item.teacher?.full_name ?? "-"}</td>
+                      <td className="px-3 py-2">{item.subject?.name ?? "-"}</td>
+                      <td className="px-3 py-2">{item.subject?.level ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </section>
+
+          <section className="mt-6">
+          <h2 className="font-semibold text-gray-800 mb-2">Asignaciones estudiante-materia</h2>
+          {setupError ? (
+            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+              {setupError}
+            </div>
+          ) : enrollments.length === 0 ? (
+            <p className="text-sm text-gray-600">Sin asignaciones aun.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-blue-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Estudiante</th>
+                    <th className="px-3 py-2">Curso</th>
+                    <th className="px-3 py-2">Materia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrollments.map((item) => (
+                    <tr key={item.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{item.student?.full_name ?? "-"}</td>
+                      <td className="px-3 py-2">{item.student?.course ?? "-"}</td>
+                      <td className="px-3 py-2">{item.subject?.name ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </section>
+        </details>
+
+        <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-4">
+          <summary className="cursor-pointer font-semibold text-gray-800">
+            Ver cuentas de padres/madres
+          </summary>
+          <section className="mt-3">
+          <h2 className="font-semibold text-gray-800 mb-2">Cuentas de padres/madres</h2>
+          {setupError ? (
+            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+              {setupError}
+            </div>
+          ) : parents.length === 0 ? (
+            <p className="text-sm text-gray-600">Aun no hay cuentas de padre/madre registradas.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-blue-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Padre/Madre</th>
+                    <th className="px-3 py-2">Usuario</th>
+                    <th className="px-3 py-2">Estudiante</th>
+                    <th className="px-3 py-2">Curso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parents.map((parent) => (
+                    <tr key={parent.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{parent.full_name}</td>
+                      <td className="px-3 py-2">{parent.username}</td>
+                      <td className="px-3 py-2">{parent.student?.full_name ?? "-"}</td>
+                      <td className="px-3 py-2">{parent.student?.course ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </section>
+        </details>
 
         <section className="mt-6">
           <h2 className="font-semibold text-gray-800 mb-2">Calificaciones ordenadas</h2>
@@ -538,12 +745,14 @@ export default async function CalificacionesPage({ searchParams }: PageProps) {
             </div>
           )}
         </section>
+          </>
+        ) : null}
 
         <Link
           href="/dashboard"
           className="mt-6 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
         >
-          Volver al dashboard
+          Volver
         </Link>
       </main>
     </div>

@@ -9,20 +9,28 @@ function toCsvCell(value: string | number): string {
   return text;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getSession();
   if (!session || !["admin", "director"].includes(session.role)) {
     return new Response("No autorizado", { status: 401 });
   }
+  const { searchParams } = new URL(request.url);
+  const selectedCourse = (searchParams.get("course") ?? "").trim();
+  if (!selectedCourse) {
+    return new Response("Debes enviar el parametro course para exportar asistencias.", {
+      status: 400,
+    });
+  }
 
-  const result = await listAttendanceRecords({ limit: 500 });
+  const result = await listAttendanceRecords({ limit: 4000 });
   if (result.error || !result.data) {
     return new Response(result.error ?? "No se pudo generar el reporte.", { status: 500 });
   }
+  const filtered = result.data.filter((item) => item.student.course === selectedCourse);
 
   const header = ["fecha", "estudiante", "curso", "estado", "fecha_registro"];
 
-  const rows = result.data.map((item) =>
+  const rows = filtered.map((item) =>
     [
       item.attendance_date,
       item.student.full_name,
@@ -40,7 +48,7 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="reporte_asistencias.csv"',
+      "Content-Disposition": `attachment; filename="reporte_asistencias_${selectedCourse.replaceAll(" ", "_")}.csv"`,
     },
   });
 }

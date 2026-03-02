@@ -7,6 +7,7 @@ export type SchoolUser = {
   username: string;
   full_name: string;
   role: "admin" | "docente" | "director";
+  is_active: boolean;
   telegram_chat_id: string | null;
   telegram_link_code: string | null;
   created_at: string;
@@ -16,6 +17,8 @@ export type Student = {
   id: number;
   full_name: string;
   course: string;
+  academic_status: "activo" | "graduado" | "retirado";
+  is_active: boolean;
   username: string | null;
   password: string | null;
   telegram_chat_id: string | null;
@@ -29,6 +32,7 @@ export type Parent = {
   student_id: number;
   full_name: string;
   username: string;
+  is_active: boolean;
   password: string;
   telegram_chat_id: string | null;
   telegram_link_code: string | null;
@@ -254,15 +258,19 @@ export async function authenticateUser(
       username: string;
       full_name: string;
       role: "admin" | "docente" | "director";
+      is_active?: boolean | null;
       password: string;
     }>
   >(
-    `/rest/v1/school_users?select=id,username,full_name,role,password&username=eq.${q(username)}&limit=1`
+    `/rest/v1/school_users?select=id,username,full_name,role,is_active,password&username=eq.${q(username)}&limit=1`
   );
 
   if (staff.error) return { data: null, error: staff.error };
   if (staff.data && staff.data.length > 0) {
     const user = staff.data[0];
+    if (user.is_active === false) {
+      return { data: null, error: null };
+    }
     const ok = await verifyPassword(password, user.password);
     if (ok) {
       if (!isBcryptHash(user.password)) {
@@ -288,13 +296,18 @@ export async function authenticateUser(
       password: string | null;
       full_name: string;
       course: string;
+      academic_status: "activo" | "graduado" | "retirado";
+      is_active?: boolean | null;
     }>
   >(
-    `/rest/v1/students?select=id,username,password,full_name,course&username=eq.${q(username)}&limit=1`
+    `/rest/v1/students?select=id,username,password,full_name,course,academic_status,is_active&username=eq.${q(username)}&limit=1`
   );
   if (students.error) return { data: null, error: students.error };
   if (students.data && students.data.length > 0) {
     const student = students.data[0];
+    if (student.is_active === false) {
+      return { data: null, error: null };
+    }
     const ok = await verifyPassword(password, student.password);
     if (ok) {
       if (!isBcryptHash(student.password)) {
@@ -320,13 +333,17 @@ export async function authenticateUser(
       username: string;
       password: string;
       full_name: string;
+      is_active?: boolean | null;
     }>
   >(
-    `/rest/v1/parents?select=id,student_id,username,password,full_name&username=eq.${q(username)}&limit=1`
+    `/rest/v1/parents?select=id,student_id,username,password,full_name,is_active&username=eq.${q(username)}&limit=1`
   );
   if (parents.error) return { data: null, error: parents.error };
   if (parents.data && parents.data.length > 0) {
     const parent = parents.data[0];
+    if (parent.is_active === false) {
+      return { data: null, error: null };
+    }
     const ok = await verifyPassword(password, parent.password);
     if (ok) {
       if (!isBcryptHash(parent.password)) {
@@ -351,8 +368,32 @@ export async function authenticateUser(
 
 export async function listSchoolUsers(): Promise<DbResult<SchoolUser[]>> {
   return dbRequest<SchoolUser[]>(
-    "/rest/v1/school_users?select=id,username,full_name,role,telegram_chat_id,telegram_link_code,created_at&order=created_at.desc"
+    "/rest/v1/school_users?select=id,username,full_name,role,is_active,telegram_chat_id,telegram_link_code,created_at&order=created_at.desc"
   );
+}
+
+export async function getSchoolUserAuthById(id: number): Promise<
+  DbResult<{
+    id: number;
+    username: string;
+    full_name: string;
+    role: "admin" | "docente" | "director";
+    password: string;
+  }>
+> {
+  const result = await dbRequest<
+    Array<{
+      id: number;
+      username: string;
+      full_name: string;
+      role: "admin" | "docente" | "director";
+      password: string;
+    }>
+  >(
+    `/rest/v1/school_users?select=id,username,full_name,role,password&id=eq.${id}&limit=1`
+  );
+  if (result.error) return { data: null, error: result.error };
+  return { data: result.data?.[0] ?? null, error: null };
 }
 
 export async function createSchoolUser(input: {
@@ -369,15 +410,54 @@ export async function createSchoolUser(input: {
   });
 }
 
+export async function updateSchoolUserProfile(input: {
+  id: number;
+  full_name: string;
+  role: "admin" | "docente" | "director";
+  is_active: boolean;
+}): Promise<DbResult<SchoolUser[]>> {
+  return dbRequest<SchoolUser[]>(`/rest/v1/school_users?id=eq.${input.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      full_name: input.full_name,
+      role: input.role,
+      is_active: input.is_active,
+    }),
+  });
+}
+
 export async function listStudents(): Promise<DbResult<Student[]>> {
   return dbRequest<Student[]>(
-    "/rest/v1/students?select=id,full_name,course,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at&order=full_name.asc"
+    "/rest/v1/students?select=id,full_name,course,academic_status,is_active,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at&order=full_name.asc"
   );
+}
+
+export async function getStudentAuthById(id: number): Promise<
+  DbResult<{
+    id: number;
+    username: string | null;
+    full_name: string;
+    password: string | null;
+  }>
+> {
+  const result = await dbRequest<
+    Array<{
+      id: number;
+      username: string | null;
+      full_name: string;
+      password: string | null;
+    }>
+  >(
+    `/rest/v1/students?select=id,username,full_name,password&id=eq.${id}&limit=1`
+  );
+  if (result.error) return { data: null, error: result.error };
+  return { data: result.data?.[0] ?? null, error: null };
 }
 
 export async function getStudentById(id: number): Promise<DbResult<Student>> {
   const result = await dbRequest<Student[]>(
-    `/rest/v1/students?select=id,full_name,course,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at&id=eq.${id}&limit=1`
+    `/rest/v1/students?select=id,full_name,course,academic_status,is_active,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at&id=eq.${id}&limit=1`
   );
   if (result.error) return { data: null, error: result.error };
   return { data: result.data?.[0] ?? null, error: null };
@@ -398,21 +478,64 @@ export async function createStudent(input: {
   });
 }
 
+export async function updateStudentProfile(input: {
+  id: number;
+  full_name: string;
+  course: string;
+  academic_status: "activo" | "graduado" | "retirado";
+  is_active: boolean;
+  username: string | null;
+}): Promise<DbResult<Student[]>> {
+  return dbRequest<Student[]>(`/rest/v1/students?id=eq.${input.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      full_name: input.full_name,
+      course: input.course,
+      academic_status: input.academic_status,
+      is_active: input.is_active,
+      username: input.username,
+    }),
+  });
+}
+
 export async function listParents(): Promise<DbResult<Parent[]>> {
   return dbRequest<Parent[]>(
-    "/rest/v1/parents?select=id,student_id,full_name,username,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&order=created_at.desc"
+    "/rest/v1/parents?select=id,student_id,full_name,username,is_active,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&order=created_at.desc"
   );
 }
 
 export async function listParentsByStudent(studentId: number): Promise<DbResult<Parent[]>> {
   return dbRequest<Parent[]>(
-    `/rest/v1/parents?select=id,student_id,full_name,username,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&student_id=eq.${studentId}&order=created_at.desc`
+    `/rest/v1/parents?select=id,student_id,full_name,username,is_active,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&student_id=eq.${studentId}&order=created_at.desc`
   );
 }
 
 export async function getParentById(id: number): Promise<DbResult<Parent>> {
   const result = await dbRequest<Parent[]>(
-    `/rest/v1/parents?select=id,student_id,full_name,username,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&id=eq.${id}&limit=1`
+    `/rest/v1/parents?select=id,student_id,full_name,username,is_active,password,telegram_chat_id,telegram_link_code,created_at,student:students(id,full_name,course)&id=eq.${id}&limit=1`
+  );
+  if (result.error) return { data: null, error: result.error };
+  return { data: result.data?.[0] ?? null, error: null };
+}
+
+export async function getParentAuthById(id: number): Promise<
+  DbResult<{
+    id: number;
+    username: string;
+    full_name: string;
+    password: string;
+  }>
+> {
+  const result = await dbRequest<
+    Array<{
+      id: number;
+      username: string;
+      full_name: string;
+      password: string;
+    }>
+  >(
+    `/rest/v1/parents?select=id,username,full_name,password&id=eq.${id}&limit=1`
   );
   if (result.error) return { data: null, error: result.error };
   return { data: result.data?.[0] ?? null, error: null };
@@ -430,6 +553,64 @@ export async function createParent(input: {
     headers: { Prefer: "return=representation" },
     body: JSON.stringify(secureInput),
   });
+}
+
+export async function updateParentProfile(input: {
+  id: number;
+  full_name: string;
+  username: string;
+  is_active: boolean;
+}): Promise<DbResult<Parent[]>> {
+  return dbRequest<Parent[]>(`/rest/v1/parents?id=eq.${input.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      full_name: input.full_name,
+      username: input.username,
+      is_active: input.is_active,
+    }),
+  });
+}
+
+export async function promoteStudentsCourse(input: {
+  fromCourse: string;
+  toCourse: string;
+}): Promise<DbResult<Student[]>> {
+  return dbRequest<Student[]>(`/rest/v1/students?course=eq.${q(input.fromCourse)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      course: input.toCourse,
+      academic_status: "activo",
+      is_active: true,
+    }),
+  });
+}
+
+export async function graduateStudentsCourse(input: {
+  fromCourse: string;
+  graduationCourseLabel: string;
+}): Promise<DbResult<Student[]>> {
+  return dbRequest<Student[]>(`/rest/v1/students?course=eq.${q(input.fromCourse)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      course: input.graduationCourseLabel,
+      academic_status: "graduado",
+      is_active: false,
+    }),
+  });
+}
+
+export async function deleteTeacherAssignmentsByTeacher(
+  teacherUserId: number
+): Promise<DbResult<null>> {
+  return dbRequest<null>(
+    `/rest/v1/teacher_subject_assignments?teacher_user_id=eq.${teacherUserId}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 export async function updateSchoolUserPassword(
@@ -508,7 +689,7 @@ export async function listSubjectStudentEnrollments(): Promise<
   DbResult<SubjectStudentEnrollment[]>
 > {
   return dbRequest<SubjectStudentEnrollment[]>(
-    "/rest/v1/subject_student_enrollments?select=id,subject_id,student_id,created_at,student:students(id,full_name,course),subject:subjects(id,name,level)&order=created_at.desc"
+    "/rest/v1/subject_student_enrollments?select=id,subject_id,student_id,created_at,student:students(id,full_name,course,academic_status,is_active,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at),subject:subjects(id,name,level)&order=created_at.desc"
   );
 }
 
@@ -552,7 +733,7 @@ export async function listStudentsBySubjectIds(
 
   const ids = subjectIds.join(",");
   const enrollments = await dbRequest<SubjectStudentEnrollment[]>(
-    `/rest/v1/subject_student_enrollments?select=id,subject_id,student_id,student:students(id,full_name,course,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at)&subject_id=in.(${ids})`
+    `/rest/v1/subject_student_enrollments?select=id,subject_id,student_id,student:students(id,full_name,course,academic_status,is_active,username,password,telegram_chat_id,telegram_link_code,guardian_chat_id,created_at)&subject_id=in.(${ids})`
   );
   if (enrollments.error || !enrollments.data) {
     return { data: null, error: enrollments.error ?? "No se pudo cargar estudiantes." };
@@ -883,7 +1064,14 @@ export async function consumeTelegramCode(params: {
 }): Promise<
   DbResult<{ role: "estudiante" | "padre"; fullName: string; username: string }>
 > {
-  const students = await dbRequest<Student[]>(
+  const students = await dbRequest<
+    Array<{
+      id: number;
+      full_name: string;
+      username: string | null;
+      telegram_link_code: string | null;
+    }>
+  >(
     `/rest/v1/students?select=id,full_name,username,telegram_link_code&telegram_link_code=eq.${q(params.code)}&limit=1`
   );
   if (students.error) return { data: null, error: students.error };
@@ -912,7 +1100,14 @@ export async function consumeTelegramCode(params: {
     };
   }
 
-  const parents = await dbRequest<Parent[]>(
+  const parents = await dbRequest<
+    Array<{
+      id: number;
+      full_name: string;
+      username: string;
+      telegram_link_code: string | null;
+    }>
+  >(
     `/rest/v1/parents?select=id,full_name,username,telegram_link_code&telegram_link_code=eq.${q(params.code)}&limit=1`
   );
   if (parents.error) return { data: null, error: parents.error };

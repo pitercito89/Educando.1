@@ -91,6 +91,53 @@ async function notifyGradePublished(params: {
   }
 }
 
+async function notifyActivityScorePublished(params: {
+  studentId: number;
+  studentFullName: string;
+  studentChatId: string | null;
+  term: string;
+  course: string;
+  subjectName: string;
+  instrumentType: string;
+  dimension: string;
+  activityTitle: string;
+  score: number;
+}) {
+  const parentsResult = await listParentsByStudent(params.studentId);
+  const parents = parentsResult.data ?? [];
+  const message =
+    `Nueva nota por actividad.\n` +
+    `Materia: ${params.subjectName}\n` +
+    `Curso: ${params.course}\n` +
+    `Periodo: ${params.term}\n` +
+    `Actividad: ${params.activityTitle}\n` +
+    `Tipo: ${params.instrumentType} | Dimension: ${params.dimension}\n` +
+    `Nota: ${params.score.toFixed(2)}`;
+
+  const studentSend = await sendTelegramMessage(params.studentChatId, message);
+  await createNotificationLog({
+    student_id: params.studentId,
+    event_type: "nota_actividad_publicada",
+    channel: "telegram",
+    message,
+    status: studentSend.ok ? "enviado" : "pendiente",
+  });
+
+  for (const parent of parents) {
+    const parentSend = await sendTelegramMessage(
+      parent.telegram_chat_id,
+      `Notificacion para ${params.studentFullName}:\n${message}`
+    );
+    await createNotificationLog({
+      student_id: params.studentId,
+      event_type: "nota_actividad_publicada_padre",
+      channel: "telegram",
+      message: `Padre ${parent.full_name}: ${message}`,
+      status: parentSend.ok ? "enviado" : "pendiente",
+    });
+  }
+}
+
 export async function createStudentAction(
   _prevState: CatalogFormState,
   formData: FormData
@@ -607,6 +654,19 @@ export async function registerEvaluationScoreAction(
   });
   if (result.error) return { error: result.error, success: null };
 
+  await notifyActivityScorePublished({
+    studentId: student.id,
+    studentFullName: student.full_name,
+    studentChatId: student.telegram_chat_id,
+    term: activity.term,
+    course: activity.course,
+    subjectName: activity.subject?.name ?? "Materia",
+    instrumentType: activity.instrument_type,
+    dimension: activity.dimension,
+    activityTitle: activity.title,
+    score,
+  });
+
   await createAuditLog({
     actor_role: session.role,
     actor_username: session.username,
@@ -706,6 +766,19 @@ export async function bulkRegisterEvaluationScoresAction(
       score: item.score,
     });
     if (save.error) return { error: save.error, success: null };
+
+    await notifyActivityScorePublished({
+      studentId: studentResult.data.id,
+      studentFullName: studentResult.data.full_name,
+      studentChatId: studentResult.data.telegram_chat_id,
+      term: activity.term,
+      course: activity.course,
+      subjectName: activity.subject?.name ?? "Materia",
+      instrumentType: activity.instrument_type,
+      dimension: activity.dimension,
+      activityTitle: activity.title,
+      score: item.score,
+    });
   }
 
   await createAuditLog({

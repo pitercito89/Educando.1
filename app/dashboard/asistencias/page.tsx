@@ -4,53 +4,78 @@ import { getSession } from "@/lib/auth";
 import {
   listAttendanceAlerts,
   listAttendanceRecords,
+  listSubjectStudentEnrollments,
+  listSubjects,
   listStudents,
   listStudentsBySubjectIds,
   listSubjectsByTeacherUserId,
 } from "@/lib/db";
 import { AttendanceForm } from "./attendance-form";
 
-export default async function AsistenciasPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function pickParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return (value[0] ?? "").trim();
+  return (value ?? "").trim();
+}
+
+export default async function AsistenciasPage({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+  const selectedCourse = pickParam(params.course);
+  const selectedSubject = pickParam(params.subject);
   const session = await getSession();
   if (!session) redirect("/login");
   if (!["admin", "docente", "director"].includes(session.role)) redirect("/dashboard");
   const canEdit = session.role === "admin" || session.role === "docente";
   const today = new Date().toISOString().slice(0, 10);
 
-  const [studentsResult, todayAttendanceResult, historyResult, alertsResult] =
+  const [
+    studentsResult,
+    subjectsResult,
+    enrollmentsResult,
+    todayAttendanceResult,
+    alertsResult,
+  ] =
     await Promise.all([
       listStudents(),
+      listSubjects(),
+      listSubjectStudentEnrollments(),
       listAttendanceRecords({ date: today, limit: 200 }),
-      listAttendanceRecords({ limit: 60 }),
       listAttendanceAlerts(3),
     ]);
 
   const setupError =
     studentsResult.error ??
+    subjectsResult.error ??
+    enrollmentsResult.error ??
     todayAttendanceResult.error ??
-    historyResult.error ??
     alertsResult.error;
 
+  let subjects = subjectsResult.data ?? [];
+  let enrollments = enrollmentsResult.data ?? [];
   let students = studentsResult.data ?? [];
   let todayAttendance = todayAttendanceResult.data ?? [];
-  let history = historyResult.data ?? [];
   let alerts = alertsResult.data ?? [];
 
   if (session.role === "docente") {
     if (!session.schoolUserId) {
       students = [];
       todayAttendance = [];
-      history = [];
       alerts = [];
     } else {
       const subjectsResult = await listSubjectsByTeacherUserId(session.schoolUserId);
       const teacherSubjects = subjectsResult.data ?? [];
       const teacherSubjectIds = teacherSubjects.map((item) => item.id);
       const studentsBySubjectResult = await listStudentsBySubjectIds(teacherSubjectIds);
+      subjects = teacherSubjects;
+      enrollments = enrollments.filter((item) =>
+        teacherSubjectIds.includes(item.subject_id)
+      );
       students = studentsBySubjectResult.data ?? [];
       const studentIds = new Set(students.map((item) => item.id));
       todayAttendance = todayAttendance.filter((item) => studentIds.has(item.student_id));
-      history = history.filter((item) => studentIds.has(item.student_id));
       alerts = alerts.filter((item) => studentIds.has(item.student_id));
     }
   }
@@ -76,7 +101,14 @@ export default async function AsistenciasPage() {
               Primero debes registrar estudiantes en el modulo de calificaciones.
             </div>
           ) : (
-            <AttendanceForm students={students} defaultDate={today} />
+            <AttendanceForm
+              students={students}
+              subjects={subjects}
+              enrollments={enrollments}
+              defaultDate={today}
+              initialCourse={selectedCourse}
+              initialSubjectId={selectedSubject}
+            />
           )}
         </section>
 
@@ -132,43 +164,11 @@ export default async function AsistenciasPage() {
           )}
         </section>
 
-        <section className="mt-6">
-          <h2 className="font-semibold text-gray-800 mb-2">Ultimos registros</h2>
-          {setupError ? (
-            <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
-              {setupError}
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-blue-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Fecha</th>
-                    <th className="px-3 py-2">Estudiante</th>
-                    <th className="px-3 py-2">Curso</th>
-                    <th className="px-3 py-2">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((item) => (
-                    <tr key={item.id} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{item.attendance_date}</td>
-                      <td className="px-3 py-2">{item.student.full_name}</td>
-                      <td className="px-3 py-2">{item.student.course}</td>
-                      <td className="px-3 py-2 capitalize">{item.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
         <Link
           href="/dashboard"
           className="mt-6 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
         >
-          Volver al dashboard
+          Volver
         </Link>
       </main>
     </div>

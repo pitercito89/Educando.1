@@ -19,8 +19,11 @@ export default async function BoletinPage({ searchParams }: PageProps) {
   if (!["admin", "director"].includes(session.role)) redirect("/dashboard");
 
   const params = (await searchParams) ?? {};
+  const selectedCourse = pickParam(params.course);
   const selectedStudentId = Number.parseInt(pickParam(params.student_id), 10);
   const selectedTerm = pickParam(params.term);
+  const sendOk = pickParam(params.send_ok);
+  const sendError = pickParam(params.send_error);
 
   const [studentsResult, gradesResult, enrollmentsResult] = await Promise.all([
     listStudents(),
@@ -32,6 +35,10 @@ export default async function BoletinPage({ searchParams }: PageProps) {
   const students = studentsResult.data ?? [];
   const allGrades = gradesResult.data ?? [];
   const enrollments = enrollmentsResult.data ?? [];
+  const courseOptions = Array.from(new Set(students.map((student) => student.course))).sort();
+  const filteredStudents = selectedCourse
+    ? students.filter((student) => student.course === selectedCourse)
+    : [];
 
   const termOptions = Array.from(new Set(allGrades.map((item) => item.term))).sort();
 
@@ -71,14 +78,27 @@ export default async function BoletinPage({ searchParams }: PageProps) {
         </p>
 
         <section className="mt-5">
-          <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-indigo-50 p-4 md:grid-cols-4">
+          <form className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-indigo-50 p-4 md:grid-cols-5">
+            <select
+              name="course"
+              defaultValue={selectedCourse}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Selecciona curso</option>
+              {courseOptions.map((course) => (
+                <option key={course} value={course}>
+                  {course}
+                </option>
+              ))}
+            </select>
+
             <select
               name="student_id"
               defaultValue={Number.isInteger(selectedStudentId) ? String(selectedStudentId) : ""}
               className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
             >
               <option value="">Selecciona estudiante</option>
-              {students.map((student) => (
+              {filteredStudents.map((student) => (
                 <option key={student.id} value={student.id}>
                   {student.full_name} - {student.course}
                 </option>
@@ -112,6 +132,11 @@ export default async function BoletinPage({ searchParams }: PageProps) {
               Limpiar
             </Link>
           </form>
+          {!selectedCourse ? (
+            <p className="mt-2 text-sm text-amber-800">
+              Primero selecciona curso para cargar lista de estudiantes.
+            </p>
+          ) : null}
         </section>
 
         <section className="mt-6">
@@ -119,9 +144,9 @@ export default async function BoletinPage({ searchParams }: PageProps) {
             <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
               {setupError}
             </div>
-          ) : !Number.isInteger(selectedStudentId) || !selectedTerm ? (
+          ) : !selectedCourse || !Number.isInteger(selectedStudentId) || !selectedTerm ? (
             <p className="text-sm text-gray-600">
-              Selecciona estudiante y trimestre para generar el boletin.
+              Selecciona curso, estudiante y trimestre para generar el boletin.
             </p>
           ) : bulletinRows.length === 0 && pendingSubjects.length === 0 ? (
             <div className="rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
@@ -199,6 +224,39 @@ export default async function BoletinPage({ searchParams }: PageProps) {
               </footer>
             </article>
           )}
+
+          {sendOk ? (
+            <div className="mt-3 rounded-lg border border-emerald-400 bg-emerald-50 p-3 text-sm text-emerald-900">
+              {sendOk}
+            </div>
+          ) : null}
+          {sendError ? (
+            <div className="mt-3 rounded-lg border border-yellow-400 bg-yellow-50 p-3 text-sm text-yellow-900">
+              {sendError}
+            </div>
+          ) : null}
+
+          {selectedCourse && Number.isInteger(selectedStudentId) && selectedTerm ? (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <a
+                href={`/dashboard/reportes/boletin.pdf?student_id=${selectedStudentId}&term=${encodeURIComponent(selectedTerm)}`}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+              >
+                Descargar PDF del boletin
+              </a>
+              <form action="/dashboard/reportes/boletin/enviar" method="post">
+                <input type="hidden" name="course" value={selectedCourse} />
+                <input type="hidden" name="student_id" value={selectedStudentId} />
+                <input type="hidden" name="term" value={selectedTerm} />
+                <button
+                  type="submit"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                >
+                  Enviar PDF a padres por Telegram
+                </button>
+              </form>
+            </div>
+          ) : null}
         </section>
 
         <section className="mt-6 rounded-2xl border border-gray-200 bg-blue-50 p-4">

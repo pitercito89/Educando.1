@@ -6,6 +6,8 @@ import {
   createAuditLog,
   createNotificationLog,
   getStudentById,
+  isStudentEnrolledInSubject,
+  isTeacherAssignedToSubject,
   isTeacherAllowedForStudent,
   listParentsByStudent,
   type AttendanceStatus,
@@ -77,14 +79,32 @@ export async function saveCourseAttendanceAction(
   }
 
   const attendanceDate = String(formData.get("attendance_date") ?? "").trim();
+  const subjectId = Number.parseInt(String(formData.get("subject_id") ?? "").trim(), 10);
   const studentIdsRaw = String(formData.get("student_ids") ?? "").trim();
   const studentIds = studentIdsRaw
     .split(",")
     .map((value) => Number.parseInt(value, 10))
     .filter((value) => Number.isInteger(value));
 
-  if (!attendanceDate || studentIds.length === 0) {
-    return { error: "Debes seleccionar curso y fecha validos.", success: null };
+  if (!attendanceDate || !Number.isInteger(subjectId) || studentIds.length === 0) {
+    return { error: "Debes seleccionar curso, materia y fecha validos.", success: null };
+  }
+
+  if (session.role === "docente") {
+    if (!session.schoolUserId) {
+      return { error: "Cuenta docente sin identificador valido.", success: null };
+    }
+    const assignment = await isTeacherAssignedToSubject({
+      teacher_user_id: session.schoolUserId,
+      subject_id: subjectId,
+    });
+    if (assignment.error) return { error: assignment.error, success: null };
+    if (!assignment.data) {
+      return {
+        error: "No puedes registrar asistencia en materias fuera de tu asignacion.",
+        success: null,
+      };
+    }
   }
 
   for (const studentId of studentIds) {
@@ -113,6 +133,18 @@ export async function saveCourseAttendanceAction(
       }
     }
 
+    const enrollment = await isStudentEnrolledInSubject({
+      student_id: studentId,
+      subject_id: subjectId,
+    });
+    if (enrollment.error) return { error: enrollment.error, success: null };
+    if (!enrollment.data) {
+      return {
+        error: "Hay estudiantes fuera de la materia seleccionada.",
+        success: null,
+      };
+    }
+
     const saveResult = await upsertAttendanceRecord({
       student_id: studentId,
       attendance_date: attendanceDate,
@@ -131,6 +163,7 @@ export async function saveCourseAttendanceAction(
       entity_id: `${studentId}:${attendanceDate}`,
       after_data: {
         student_id: studentId,
+        subject_id: subjectId,
         attendance_date: attendanceDate,
         status,
       },

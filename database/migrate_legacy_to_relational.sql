@@ -15,6 +15,7 @@ create table if not exists public.school_users (
   password text,
   full_name text not null,
   role text not null check (role in ('admin', 'docente', 'director')),
+  is_active boolean not null default true,
   telegram_chat_id text,
   telegram_link_code text unique,
   created_at timestamptz not null default now()
@@ -24,6 +25,8 @@ create table if not exists public.students (
   id bigint generated always as identity primary key,
   full_name text not null,
   course text not null,
+  academic_status text not null default 'activo' check (academic_status in ('activo', 'graduado', 'retirado')),
+  is_active boolean not null default true,
   username text unique,
   password text,
   telegram_chat_id text,
@@ -38,6 +41,7 @@ create table if not exists public.parents (
   full_name text not null,
   username text not null unique,
   password text not null,
+  is_active boolean not null default true,
   telegram_chat_id text,
   telegram_link_code text unique,
   created_at timestamptz not null default now()
@@ -161,11 +165,21 @@ create table if not exists public.audit_logs (
 alter table public.school_users add column if not exists password text;
 alter table public.school_users add column if not exists telegram_chat_id text;
 alter table public.school_users add column if not exists telegram_link_code text;
+alter table public.school_users add column if not exists is_active boolean not null default true;
 
 alter table public.students add column if not exists username text;
 alter table public.students add column if not exists password text;
 alter table public.students add column if not exists telegram_chat_id text;
 alter table public.students add column if not exists telegram_link_code text;
+alter table public.students add column if not exists academic_status text not null default 'activo';
+alter table public.students add column if not exists is_active boolean not null default true;
+
+alter table public.parents add column if not exists is_active boolean not null default true;
+
+alter table public.students drop constraint if exists students_academic_status_check;
+alter table public.students
+  add constraint students_academic_status_check
+  check (academic_status in ('activo', 'graduado', 'retirado'));
 
 -- Migracion de seguridad: hashear passwords legadas en texto plano usando bcrypt (pgcrypto/crypt)
 update public.school_users

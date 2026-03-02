@@ -5,9 +5,19 @@ import {
   createAuditLog,
   createSchoolUser,
   createTeacherSubjectAssignment,
+  deleteTeacherAssignmentsByTeacher,
+  graduateStudentsCourse,
+  promoteStudentsCourse,
+  updateParentPassword,
+  updateParentProfile,
+  updateSchoolUserPassword,
+  updateSchoolUserProfile,
+  updateStudentPassword,
+  updateStudentProfile,
   type UserRole,
 } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { hashPassword } from "@/lib/security";
 
 export type UserFormState = {
   error: string | null;
@@ -15,6 +25,16 @@ export type UserFormState = {
 };
 
 export type TeacherSubjectState = {
+  error: string | null;
+  success: string | null;
+};
+
+export type UserUpdateState = {
+  error: string | null;
+  success: string | null;
+};
+
+export type LifecycleState = {
   error: string | null;
   success: string | null;
 };
@@ -138,4 +158,294 @@ export async function assignTeacherSubjectAction(
   revalidatePath("/dashboard/usuarios");
   revalidatePath("/dashboard/calificaciones");
   return { error: null, success: "Materia asignada al docente correctamente." };
+}
+
+export async function updateSchoolUserAction(
+  _prevState: UserUpdateState,
+  formData: FormData
+): Promise<UserUpdateState> {
+  const session = await getSession();
+  if (!session) return { error: "Sesion no valida.", success: null };
+  if (session.role !== "admin") {
+    return { error: "Solo admin puede editar usuarios.", success: null };
+  }
+
+  const id = Number.parseInt(String(formData.get("id") ?? "").trim(), 10);
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const role = String(formData.get("role") ?? "").trim() as UserRole;
+  const isActive = String(formData.get("is_active") ?? "").trim() === "true";
+  const newPassword = String(formData.get("new_password") ?? "").trim();
+  const allowedRoles: Array<"admin" | "docente" | "director"> = [
+    "admin",
+    "docente",
+    "director",
+  ];
+
+  if (
+    !Number.isInteger(id) ||
+    !fullName ||
+    !allowedRoles.includes(role as "admin" | "docente" | "director")
+  ) {
+    return { error: "Datos invalidos para actualizar usuario.", success: null };
+  }
+
+  const profileResult = await updateSchoolUserProfile({
+    id,
+    full_name: fullName,
+    role: role as "admin" | "docente" | "director",
+    is_active: isActive,
+  });
+  if (profileResult.error) return { error: profileResult.error, success: null };
+
+  if (newPassword) {
+    if (newPassword.length < 8) {
+      return { error: "La nueva contrasena debe tener al menos 8 caracteres.", success: null };
+    }
+    const hash = await hashPassword(newPassword);
+    const passResult = await updateSchoolUserPassword(id, hash);
+    if (passResult.error) return { error: passResult.error, success: null };
+  }
+
+  await createAuditLog({
+    actor_role: session.role,
+    actor_username: session.username,
+    actor_user_id: session.schoolUserId ?? null,
+    entity: "usuarios",
+    action: "actualizar",
+    entity_id: String(id),
+    after_data: {
+      user_type: "school_user",
+      full_name: fullName,
+      role,
+      is_active: isActive,
+      password_updated: Boolean(newPassword),
+    },
+  });
+
+  if (!isActive) {
+    await deleteTeacherAssignmentsByTeacher(id);
+  }
+
+  revalidatePath("/dashboard/usuarios");
+  return { error: null, success: "Usuario actualizado." };
+}
+
+export async function updateStudentAction(
+  _prevState: UserUpdateState,
+  formData: FormData
+): Promise<UserUpdateState> {
+  const session = await getSession();
+  if (!session) return { error: "Sesion no valida.", success: null };
+  if (session.role !== "admin") {
+    return { error: "Solo admin puede editar estudiantes.", success: null };
+  }
+
+  const id = Number.parseInt(String(formData.get("id") ?? "").trim(), 10);
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const course = String(formData.get("course") ?? "").trim();
+  const academicStatus = String(formData.get("academic_status") ?? "").trim() as
+    | "activo"
+    | "graduado"
+    | "retirado";
+  const isActive = String(formData.get("is_active") ?? "").trim() === "true";
+  const usernameRaw = String(formData.get("username") ?? "").trim();
+  const username = usernameRaw || null;
+  const newPassword = String(formData.get("new_password") ?? "").trim();
+
+  if (!Number.isInteger(id) || !fullName || !course) {
+    return { error: "Datos invalidos para actualizar estudiante.", success: null };
+  }
+  if (!["activo", "graduado", "retirado"].includes(academicStatus)) {
+    return { error: "Estado academico invalido.", success: null };
+  }
+  if (username && !USERNAME_REGEX.test(username)) {
+    return {
+      error: "Usuario de estudiante invalido. Usa 4-30 caracteres permitidos.",
+      success: null,
+    };
+  }
+
+  const profileResult = await updateStudentProfile({
+    id,
+    full_name: fullName,
+    course,
+    academic_status: academicStatus,
+    is_active: isActive,
+    username,
+  });
+  if (profileResult.error) return { error: profileResult.error, success: null };
+
+  if (newPassword) {
+    if (newPassword.length < 8) {
+      return { error: "La nueva contrasena debe tener al menos 8 caracteres.", success: null };
+    }
+    const hash = await hashPassword(newPassword);
+    const passResult = await updateStudentPassword(id, hash);
+    if (passResult.error) return { error: passResult.error, success: null };
+  }
+
+  await createAuditLog({
+    actor_role: session.role,
+    actor_username: session.username,
+    actor_user_id: session.schoolUserId ?? null,
+    entity: "usuarios",
+    action: "actualizar",
+    entity_id: String(id),
+    after_data: {
+      user_type: "student",
+      full_name: fullName,
+      course,
+      academic_status: academicStatus,
+      is_active: isActive,
+      username,
+      password_updated: Boolean(newPassword),
+    },
+  });
+
+  revalidatePath("/dashboard/usuarios");
+  revalidatePath("/dashboard/calificaciones");
+  return { error: null, success: "Estudiante actualizado." };
+}
+
+export async function updateParentAction(
+  _prevState: UserUpdateState,
+  formData: FormData
+): Promise<UserUpdateState> {
+  const session = await getSession();
+  if (!session) return { error: "Sesion no valida.", success: null };
+  if (session.role !== "admin") {
+    return { error: "Solo admin puede editar padres/madres.", success: null };
+  }
+
+  const id = Number.parseInt(String(formData.get("id") ?? "").trim(), 10);
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const username = String(formData.get("username") ?? "").trim();
+  const isActive = String(formData.get("is_active") ?? "").trim() === "true";
+  const newPassword = String(formData.get("new_password") ?? "").trim();
+
+  if (!Number.isInteger(id) || !fullName || !username) {
+    return { error: "Datos invalidos para actualizar padre/madre.", success: null };
+  }
+  if (!USERNAME_REGEX.test(username)) {
+    return { error: "Usuario de padre/madre invalido.", success: null };
+  }
+
+  const profileResult = await updateParentProfile({
+    id,
+    full_name: fullName,
+    username,
+    is_active: isActive,
+  });
+  if (profileResult.error) return { error: profileResult.error, success: null };
+
+  if (newPassword) {
+    if (newPassword.length < 8) {
+      return { error: "La nueva contrasena debe tener al menos 8 caracteres.", success: null };
+    }
+    const hash = await hashPassword(newPassword);
+    const passResult = await updateParentPassword(id, hash);
+    if (passResult.error) return { error: passResult.error, success: null };
+  }
+
+  await createAuditLog({
+    actor_role: session.role,
+    actor_username: session.username,
+    actor_user_id: session.schoolUserId ?? null,
+    entity: "usuarios",
+    action: "actualizar",
+    entity_id: String(id),
+    after_data: {
+      user_type: "parent",
+      full_name: fullName,
+      username,
+      is_active: isActive,
+      password_updated: Boolean(newPassword),
+    },
+  });
+
+  revalidatePath("/dashboard/usuarios");
+  return { error: null, success: "Padre/madre actualizado." };
+}
+
+export async function promoteCourseAction(
+  _prevState: LifecycleState,
+  formData: FormData
+): Promise<LifecycleState> {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return { error: "Solo admin puede promover cursos.", success: null };
+  }
+
+  const fromCourse = String(formData.get("from_course") ?? "").trim();
+  const toCourse = String(formData.get("to_course") ?? "").trim();
+  if (!fromCourse || !toCourse) {
+    return { error: "Debes indicar curso origen y destino.", success: null };
+  }
+
+  const result = await promoteStudentsCourse({ fromCourse, toCourse });
+  if (result.error) return { error: result.error, success: null };
+
+  await createAuditLog({
+    actor_role: session.role,
+    actor_username: session.username,
+    actor_user_id: session.schoolUserId ?? null,
+    entity: "usuarios",
+    action: "actualizar",
+    after_data: {
+      action_type: "promocion_curso",
+      from_course: fromCourse,
+      to_course: toCourse,
+      affected_rows: result.data?.length ?? 0,
+    },
+  });
+
+  revalidatePath("/dashboard/usuarios");
+  revalidatePath("/dashboard/calificaciones");
+  revalidatePath("/dashboard/asistencias");
+  return {
+    error: null,
+    success: `Promocion aplicada. Estudiantes actualizados: ${result.data?.length ?? 0}.`,
+  };
+}
+
+export async function graduateCourseAction(
+  _prevState: LifecycleState,
+  formData: FormData
+): Promise<LifecycleState> {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return { error: "Solo admin puede graduar cursos.", success: null };
+  }
+
+  const fromCourse = String(formData.get("from_course") ?? "").trim();
+  const graduationYear = String(formData.get("graduation_year") ?? "").trim();
+  if (!fromCourse || !graduationYear) {
+    return { error: "Debes indicar curso origen y gestion de graduacion.", success: null };
+  }
+
+  const graduationCourseLabel = `Graduado ${graduationYear}`;
+  const result = await graduateStudentsCourse({ fromCourse, graduationCourseLabel });
+  if (result.error) return { error: result.error, success: null };
+
+  await createAuditLog({
+    actor_role: session.role,
+    actor_username: session.username,
+    actor_user_id: session.schoolUserId ?? null,
+    entity: "usuarios",
+    action: "actualizar",
+    after_data: {
+      action_type: "graduacion_curso",
+      from_course: fromCourse,
+      graduation_course: graduationCourseLabel,
+      affected_rows: result.data?.length ?? 0,
+    },
+  });
+
+  revalidatePath("/dashboard/usuarios");
+  revalidatePath("/dashboard/calificaciones");
+  revalidatePath("/dashboard/asistencias");
+  return {
+    error: null,
+    success: `Graduacion aplicada. Estudiantes actualizados: ${result.data?.length ?? 0}.`,
+  };
 }

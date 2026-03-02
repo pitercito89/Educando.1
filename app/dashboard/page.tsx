@@ -8,6 +8,8 @@ import {
   listAttendanceAlerts,
   listAttendanceRecords,
   listGradeRecords,
+  listSubjectStudentEnrollments,
+  listSubjectsByTeacherUserId,
   listStudents,
 } from "@/lib/db";
 import {
@@ -141,20 +143,28 @@ export default async function DashboardPage() {
                   {roleLabel(session.role)}
                 </span>
                 <h1 className={`text-2xl font-extrabold md:text-3xl ${palette.title}`}>
-                  Dashboard Estudiante
+                  Estudiante
                 </h1>
                 <p className="text-sm text-gray-600">
                   Bienvenido, <span className="font-semibold">{session.fullName}</span>
                 </p>
               </div>
-              <form action={logoutAction}>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard/cuenta"
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                 >
-                  Cerrar Sesion
-                </button>
-              </form>
+                  Mi cuenta
+                </Link>
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Cerrar Sesion
+                  </button>
+                </form>
+              </div>
             </div>
           </header>
 
@@ -231,20 +241,28 @@ export default async function DashboardPage() {
                   {roleLabel(session.role)}
                 </span>
                 <h1 className={`text-2xl font-extrabold md:text-3xl ${palette.title}`}>
-                  Dashboard Padre/Madre
+                  Padre/Madre
                 </h1>
                 <p className="text-sm text-gray-600">
                   Bienvenido, <span className="font-semibold">{session.fullName}</span>
                 </p>
               </div>
-              <form action={logoutAction}>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard/cuenta"
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                 >
-                  Cerrar Sesion
-                </button>
-              </form>
+                  Mi cuenta
+                </Link>
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Cerrar Sesion
+                  </button>
+                </form>
+              </div>
             </div>
           </header>
 
@@ -296,6 +314,165 @@ export default async function DashboardPage() {
     );
   }
 
+  if (session.role === "docente") {
+    if (!session.schoolUserId) redirect("/login");
+    const [
+      teacherSubjectsResult,
+      enrollmentsResult,
+      attendanceResult,
+      alertsResult,
+    ] = await Promise.all([
+      listSubjectsByTeacherUserId(session.schoolUserId),
+      listSubjectStudentEnrollments(),
+      listAttendanceRecords({ date: today, limit: 300 }),
+      listAttendanceAlerts(3),
+    ]);
+
+    const teacherSubjects = teacherSubjectsResult.data ?? [];
+    const teacherSubjectIds = new Set(teacherSubjects.map((item) => item.id));
+    const teacherEnrollments = (enrollmentsResult.data ?? []).filter((row) =>
+      teacherSubjectIds.has(row.subject_id)
+    );
+
+    const cardsMap = new Map<
+      string,
+      { subjectId: number; subjectName: string; course: string; studentsCount: number }
+    >();
+    for (const row of teacherEnrollments) {
+      const course = row.student?.course ?? "";
+      if (!course) continue;
+      const key = `${row.subject_id}|||${course}`;
+      const current = cardsMap.get(key);
+      if (current) {
+        current.studentsCount += 1;
+      } else {
+        cardsMap.set(key, {
+          subjectId: row.subject_id,
+          subjectName: row.subject?.name ?? "Materia",
+          course,
+          studentsCount: 1,
+        });
+      }
+    }
+    const subjectCards = Array.from(cardsMap.values()).sort((a, b) => {
+      const bySubject = a.subjectName.localeCompare(b.subjectName);
+      if (bySubject !== 0) return bySubject;
+      return a.course.localeCompare(b.course);
+    });
+
+    const totalStudents = teacherEnrollments.length;
+    const attendanceToday = (attendanceResult.data ?? []).filter((item) =>
+      teacherEnrollments.some((row) => row.student_id === item.student_id)
+    );
+    const alerts = (alertsResult.data ?? []).filter((item) =>
+      teacherEnrollments.some((row) => row.student_id === item.student_id)
+    );
+
+    return (
+      <div className="min-h-screen bg-[linear-gradient(145deg,#eef5ff_0%,#f8fbff_42%,#f4f7ff_100%)] p-4 md:p-8">
+        <div className="mx-auto max-w-6xl space-y-6">
+          <header className="rounded-3xl border border-white/80 bg-white/95 p-6 shadow-[0_22px_52px_-35px_rgba(16,64,124,0.6)]">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-2">
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${palette.badge}`}>
+                  {roleLabel(session.role)}
+                </span>
+                <h1 className={`text-2xl font-extrabold md:text-3xl ${palette.title}`}>
+                  Docente
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Sesion activa de <span className="font-semibold">{session.fullName}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard/cuenta"
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                >
+                  Mi cuenta
+                </Link>
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Cerrar Sesion
+                  </button>
+                </form>
+              </div>
+            </div>
+          </header>
+
+          <main className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <section className="rounded-2xl bg-white p-5 shadow-md">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Materias-Curso</p>
+              <p className="mt-2 text-3xl font-black text-blue-700">{subjectCards.length}</p>
+            </section>
+            <section className="rounded-2xl bg-white p-5 shadow-md">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Estudiantes asignados</p>
+              <p className="mt-2 text-3xl font-black text-emerald-700">{totalStudents}</p>
+            </section>
+            <section className="rounded-2xl bg-white p-5 shadow-md">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Alertas pendientes</p>
+              <p className="mt-2 text-3xl font-black text-rose-700">{alerts.length}</p>
+            </section>
+          </main>
+
+          <section>
+            <h2 className="mb-3 text-xl font-bold text-slate-900">Mis materias asignadas</h2>
+            {subjectCards.length === 0 ? (
+              <p className="rounded-2xl border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+                No tienes materias con estudiantes asignados todavia.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {subjectCards.map((card) => (
+                  <article
+                    key={`${card.subjectId}-${card.course}`}
+                    className="rounded-2xl border border-blue-100 bg-white p-5 shadow-[0_12px_32px_-24px_rgba(19,63,124,0.8)]"
+                  >
+                    <h3 className="text-lg font-bold text-blue-700">
+                      {card.subjectName} {card.course}
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-600">
+                      Estudiantes: <span className="font-semibold">{card.studentsCount}</span>
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/dashboard/calificaciones?view=operativa&course=${encodeURIComponent(
+                          card.course
+                        )}&subject=${card.subjectId}`}
+                        className="inline-flex rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      >
+                        Calificar
+                      </Link>
+                      <Link
+                        href={`/dashboard/asistencias?course=${encodeURIComponent(
+                          card.course
+                        )}&subject=${card.subjectId}`}
+                        className="inline-flex rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                      >
+                        Tomar asistencia
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl bg-white p-5 shadow-md">
+            <h2 className="text-lg font-bold text-slate-900">Asistencia de hoy</h2>
+            <p className="mt-2 text-sm text-gray-700">
+              Registros tomados hoy en tus cursos/materias:{" "}
+              <span className="font-semibold">{attendanceToday.length}</span>
+            </p>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   const [studentsResult, attendanceResult, alertsResult] = await Promise.all([
     listStudents(),
     listAttendanceRecords({ date: today, limit: 300 }),
@@ -323,20 +500,28 @@ export default async function DashboardPage() {
                 {roleLabel(session.role)}
               </span>
               <h1 className={`text-2xl font-extrabold md:text-3xl ${palette.title}`}>
-                Dashboard {roleLabel(session.role)}
+                {roleLabel(session.role)}
               </h1>
               <p className="text-sm text-gray-600">
                 Sesion activa de <span className="font-semibold">{session.fullName}</span>
               </p>
             </div>
-            <form action={logoutAction}>
-              <button
-                type="submit"
-                className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard/cuenta"
+                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
               >
-                Cerrar Sesion
-              </button>
-            </form>
+                Mi cuenta
+              </Link>
+              <form action={logoutAction}>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Cerrar Sesion
+                </button>
+              </form>
+            </div>
           </div>
         </header>
 
